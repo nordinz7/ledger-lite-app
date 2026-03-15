@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Ledger Lite",
-    "slug": "ledger-lite",
+    "slug": "ledger-lite-app",
     "version": "0.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -41,6 +41,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "d31b5c21-615b-46bb-8643-6b79d5ef68ad"
+      }
+    },
+    "owner": "nordindev"
   }
 }
