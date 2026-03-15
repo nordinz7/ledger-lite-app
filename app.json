@@ -18,7 +18,7 @@
         "backgroundColor": "#1565C0"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.ledgerlite.app"
+      "package": "com.nordinopenlabs.ledgerlite"
     },
     "web": {
       "output": "static",
