@@ -117,12 +117,9 @@ export default function DashboardScreen() {
   }, [params.filterDate]);
 
   const loadData = useCallback(async () => {
-    const from = format(startOfDay(selectedDate), 'yyyy-MM-dd');
-    const to = format(endOfDay(selectedDate), 'yyyy-MM-dd');
-
     const [sum, cats, txns, accs] = await Promise.all([
-      getDashboardSummary(db, from, to),
-      getCategorySummary(db, from, to),
+      getDashboardSummary(db, selectedDate),
+      getCategorySummary(db, selectedDate),
       getRecentTransactions(db, 5),
       getAccounts(db),
     ]);

@@ -277,18 +277,31 @@ export interface DashboardSummary {
 
 export async function getDashboardSummary(
   db: SQLite.SQLiteDatabase,
-  from: string,
-  to: string,
+  date?: string,
 ): Promise<DashboardSummary> {
-  const result = await db.getFirstAsync<{ income: number; expense: number }>(
-    `SELECT
+  let query = `
+    SELECT
       COALESCE(SUM(CASE WHEN c.type = 'INCOME' THEN t.amount ELSE 0 END), 0) as income,
       COALESCE(SUM(CASE WHEN c.type = 'EXPENSE' THEN t.amount ELSE 0 END), 0) as expense
-     FROM transactions t
-     JOIN categories c ON c.id = t.category_id
-     WHERE t.transaction_date >= ? AND t.transaction_date <= ?`,
-    from, to
+    FROM transactions t
+    JOIN categories c ON c.id = t.category_id
+  `;
+
+  const params: string[] = [];
+
+  if (date) {
+    const from = startOfDay(new Date(date)).toISOString();
+    const to = endOfDay(new Date(date)).toISOString();
+
+    query += ` WHERE t.transaction_date >= ? AND t.transaction_date <= ?`;
+    params.push(from, to);
+  }
+
+  const result = await db.getFirstAsync<{ income: number; expense: number }>(
+    query,
+    ...params
   );
+
   return {
     totalIncome: result?.income ?? 0,
     totalExpense: result?.expense ?? 0,
@@ -306,24 +319,45 @@ export interface CategorySummary {
 
 export async function getCategorySummary(
   db: SQLite.SQLiteDatabase,
-  from: string,
-  to: string,
+  date?: string,
   type?: 'INCOME' | 'EXPENSE',
 ): Promise<CategorySummary[]> {
-  const typeFilter = type ? ' AND c.type = ?' : '';
-  const params: (string)[] = [from, to];
-  if (type) params.push(type);
-
-  return db.getAllAsync<CategorySummary>(
-    `SELECT c.id as category_id, c.name as category_name, c.type as category_type, c.icon_name as icon_name,
+  let query = `
+    SELECT
+      c.id as category_id,
+      c.name as category_name,
+      c.type as category_type,
+      c.icon_name as icon_name,
       SUM(t.amount) as total
-     FROM transactions t
-     JOIN categories c ON c.id = t.category_id
-     WHERE t.transaction_date >= ? AND t.transaction_date <= ?${typeFilter}
-     GROUP BY c.id
-     ORDER BY total DESC`,
-    ...params
-  );
+    FROM transactions t
+    JOIN categories c ON c.id = t.category_id
+  `;
+
+  const conditions: string[] = [];
+  const params: string[] = [];
+
+  if (date) {
+    const from = startOfDay(new Date(date)).toISOString();
+    const to = endOfDay(new Date(date)).toISOString();
+    conditions.push(`t.transaction_date >= ? AND t.transaction_date <= ?`);
+    params.push(from, to);
+  }
+
+  if (type) {
+    conditions.push(`c.type = ?`);
+    params.push(type);
+  }
+
+  if (conditions.length > 0) {
+    query += ` WHERE ` + conditions.join(' AND ');
+  }
+
+  query += `
+    GROUP BY c.id
+    ORDER BY total DESC
+  `;
+
+  return db.getAllAsync<CategorySummary>(query, ...params);
 }
 
 export async function getRecentTransactions(
