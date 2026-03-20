@@ -3,6 +3,7 @@ import { useSettings } from '@/contexts/SettingsContext';
 import { createAndShareBackup, pickAndRestoreBackup } from '@/utils/backup';
 import { MaterialIcons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
+import { useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from 'react-native';
@@ -39,6 +40,7 @@ function makeStyles(c: AppColors) {
 }
 
 export default function SettingsScreen() {
+  const router = useRouter();
   const db = useSQLiteContext();
   const { colors, isDark, toggleTheme, currencySymbol, setCurrencySymbol } = useSettings();
   const S = makeStyles(colors);
@@ -100,6 +102,17 @@ export default function SettingsScreen() {
               thumbColor="#FFFFFF"
             />
           </View>
+        </View>
+      </View>
+
+      <View style={S.section}>
+        <Text style={S.sectionTitle}>Data</Text>
+        <View style={S.card}>
+          <TouchableOpacity style={[S.row, S.rowLast]} onPress={() => router.push({ pathname: '/accounts' })}>
+            <MaterialIcons name="account-balance" size={24} color={colors.primary} style={S.rowIcon} />
+            <Text style={S.rowLabel}>Manage Accounts</Text>
+            <MaterialIcons name="chevron-right" size={22} color={colors.textMuted} />
+          </TouchableOpacity>
         </View>
       </View>
 
