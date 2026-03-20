@@ -400,7 +400,6 @@ export interface TransactionFilters {
   categoryId?: number | null;
 }
 
-// Add this function in the Transactions section
 export async function getFilteredTransactions(
   db: SQLite.SQLiteDatabase,
   filters: TransactionFilters
@@ -412,32 +411,37 @@ export async function getFilteredTransactions(
     JOIN categories c ON c.id = t.category_id
   `;
 
-  if (compact(Object.values(filters)).length){
-    query += `WHERE`;
-  }
-
+  const conditions: string[] = [];
   const params: any[] = [];
 
-  if (filters.date){
+  if (filters.date) {
     const dateStr = typeof filters.date === 'string' ? filters.date : format(filters.date, 'yyyy-MM-dd');
-    query += ` t.transaction_date >= ? AND t.transaction_date <= ?`;
+
+    // Note: If your DB stores `transaction_date` as exactly 'yyyy-MM-dd',
+    // it's safer to just do: conditions.push(`t.transaction_date = ?`) with params.push(dateStr)
+    // But keeping your range logic here:
+    conditions.push(`t.transaction_date >= ? AND t.transaction_date <= ?`);
     params.push(startOfDay(new Date(dateStr)).toISOString(), endOfDay(new Date(dateStr)).toISOString());
   }
 
-
   if (filters.type) {
-    query += ` AND c.type = ?`;
+    conditions.push(`c.type = ?`);
     params.push(filters.type);
   }
 
   if (filters.accountId) {
-    query += ` AND t.account_id = ?`;
+    conditions.push(`t.account_id = ?`);
     params.push(filters.accountId);
   }
 
   if (filters.categoryId) {
-    query += ` AND t.category_id = ?`;
+    conditions.push(`t.category_id = ?`);
     params.push(filters.categoryId);
+  }
+
+  // If we have any conditions, append WHERE and join them with AND
+  if (conditions.length > 0) {
+    query += ` WHERE ` + conditions.join(` AND `);
   }
 
   query += ` ORDER BY t.transaction_date DESC, t.id DESC`;
