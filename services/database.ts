@@ -150,6 +150,22 @@ export async function getCategoriesByType(db: SQLite.SQLiteDatabase, type: 'INCO
   return db.getAllAsync<Category>('SELECT * FROM categories WHERE type = ? ORDER BY name', type);
 }
 
+export async function categoryExists(db: SQLite.SQLiteDatabase, name: string, excludeId?: number): Promise<boolean> {
+  if (excludeId) {
+    const res = await db.getFirstAsync<{ cnt: number }>(
+      'SELECT COUNT(*) as cnt FROM categories WHERE LOWER(name) = LOWER(?) AND id != ?',
+      name, excludeId
+    );
+    return (res?.cnt || 0) > 0;
+  } else {
+    const res = await db.getFirstAsync<{ cnt: number }>(
+      'SELECT COUNT(*) as cnt FROM categories WHERE LOWER(name) = LOWER(?)',
+      name
+    );
+    return (res?.cnt || 0) > 0;
+  }
+}
+
 export async function addCategory(db: SQLite.SQLiteDatabase, name: string, type: 'INCOME' | 'EXPENSE', iconName: string): Promise<number> {
   const result = await db.runAsync(
     'INSERT INTO categories (name, type, icon_name) VALUES (?, ?, ?)',

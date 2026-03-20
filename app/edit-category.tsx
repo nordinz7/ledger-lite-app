@@ -1,6 +1,6 @@
 import { AppColors, FontSizes, Radius, Spacing } from '@/constants/theme';
 import { useSettings } from '@/contexts/SettingsContext';
-import { updateCategory, deleteCategory } from '@/services/database';
+import { updateCategory, deleteCategory, categoryExists } from '@/services/database';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
@@ -8,14 +8,6 @@ import { useEffect, useState } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 type Tab = 'EXPENSE' | 'INCOME';
-
-const ICON_OPTIONS: string[] = [
-  'restaurant', 'directions-car', 'home', 'bolt', 'shopping-cart', 'movie',
-  'local-hospital', 'school', 'fitness-center', 'pets', 'flight',
-  'phone', 'wifi', 'local-gas-station', 'build', 'card-giftcard',
-  'account-balance-wallet', 'storefront', 'work', 'add-circle',
-  'trending-up', 'savings', 'payments', 'monetization-on', 'more-horiz',
-];
 
 function makeStyles(c: AppColors) {
   return StyleSheet.create({
@@ -32,13 +24,6 @@ function makeStyles(c: AppColors) {
       paddingHorizontal: Spacing.xl, paddingVertical: Spacing.lg,
       fontSize: FontSizes.lg, color: c.text, fontWeight: '600',
     },
-    iconGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
-    iconBtn: {
-      width: 48, height: 48, borderRadius: 24,
-      alignItems: 'center', justifyContent: 'center',
-      backgroundColor: c.filterInactive,
-    },
-    iconBtnActive: { backgroundColor: c.primary },
     btnRow: { flexDirection: 'row', margin: Spacing.lg, gap: Spacing.md },
     saveBtn: {
       flex: 1, backgroundColor: c.primary,
@@ -63,29 +48,36 @@ export default function EditCategoryScreen() {
 
   const [tab, setTab] = useState<Tab>('EXPENSE');
   const [name, setName] = useState('');
-  const [icon, setIcon] = useState('more-horiz');
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
     (async () => {
-      const cat = await db.getFirstAsync<{ id: number; name: string; type: string; icon_name: string }>(
+      const cat = await db.getFirstAsync<{ id: number; name: string; type: string; }>(
         'SELECT * FROM categories WHERE id = ?', Number(id)
       );
       if (cat) {
         setName(cat.name);
         setTab(cat.type as Tab);
-        setIcon(cat.icon_name);
       }
       setLoaded(true);
     })();
   }, [db, id]);
 
   const handleSave = async () => {
-    if (!name.trim()) {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
       Alert.alert('Missing Name', 'Please enter a category name.');
       return;
     }
-    await updateCategory(db, Number(id), name.trim(), tab, icon);
+
+    // Check for duplicate name (ignoring the current category's id)
+    const exists = await categoryExists(db, trimmedName, Number(id));
+    if (exists) {
+      Alert.alert('Duplicate Name', 'A category with this name already exists.');
+      return;
+    }
+
+    await updateCategory(db, Number(id), trimmedName, tab, 'more-horiz');
     router.back();
   };
 
@@ -130,21 +122,6 @@ export default function EditCategoryScreen() {
             placeholder="e.g. Groceries"
             placeholderTextColor={colors.textMuted}
           />
-        </View>
-
-        <View style={S.section}>
-          <Text style={S.label}>Icon</Text>
-          <View style={S.iconGrid}>
-            {ICON_OPTIONS.map(ic => (
-              <TouchableOpacity
-                key={ic}
-                style={[S.iconBtn, icon === ic && S.iconBtnActive]}
-                onPress={() => setIcon(ic)}
-              >
-                <MaterialIcons name={ic as any} size={24} color={icon === ic ? '#FFFFFF' : colors.textSecondary} />
-              </TouchableOpacity>
-            ))}
-          </View>
         </View>
 
         <View style={S.btnRow}>

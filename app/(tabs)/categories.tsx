@@ -102,9 +102,7 @@ export default function CategoriesScreen() {
             onPress={() => router.push({ pathname: '/edit-category', params: { id: item.id } })}
             onLongPress={() => handleDelete(item)}
           >
-            <View style={[S.catIcon, { backgroundColor: item.type === 'INCOME' ? colors.successLight : colors.dangerLight }]}>
-              <MaterialIcons name={item.icon_name as any} size={22} color={item.type === 'INCOME' ? colors.success : colors.danger} />
-            </View>
+            {/* The icon View block has been removed here */}
             <Text style={S.catName}>{item.name}</Text>
             <MaterialIcons name="chevron-right" size={22} color={colors.textMuted} style={S.chevron} />
           </TouchableOpacity>
