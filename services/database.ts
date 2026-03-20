@@ -1,4 +1,6 @@
+import { endOfDay, format, startOfDay } from 'date-fns';
 import * as SQLite from 'expo-sqlite';
+import { compact } from 'lodash';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -388,4 +390,57 @@ export async function restoreFromBackupData(
     categories: data.categories.length,
     transactions: data.transactions.length,
   };
+}
+
+// Add this interface along with other types
+export interface TransactionFilters {
+  date: string | Date | null;
+  type?: 'INCOME' | 'EXPENSE' | null;
+  accountId?: number | null;
+  categoryId?: number | null;
+}
+
+// Add this function in the Transactions section
+export async function getFilteredTransactions(
+  db: SQLite.SQLiteDatabase,
+  filters: TransactionFilters
+): Promise<TransactionWithDetails[]> {
+  let query = `
+    SELECT t.*, a.name as account_name, c.name as category_name, c.type as category_type, c.icon_name as category_icon
+    FROM transactions t
+    JOIN accounts a ON a.id = t.account_id
+    JOIN categories c ON c.id = t.category_id
+  `;
+
+  if (compact(Object.values(filters)).length){
+    query += `WHERE`;
+  }
+
+  const params: any[] = [];
+
+  if (filters.date){
+    const dateStr = typeof filters.date === 'string' ? filters.date : format(filters.date, 'yyyy-MM-dd');
+    query += ` t.transaction_date >= ? AND t.transaction_date <= ?`;
+    params.push(startOfDay(new Date(dateStr)).toISOString(), endOfDay(new Date(dateStr)).toISOString());
+  }
+
+
+  if (filters.type) {
+    query += ` AND c.type = ?`;
+    params.push(filters.type);
+  }
+
+  if (filters.accountId) {
+    query += ` AND t.account_id = ?`;
+    params.push(filters.accountId);
+  }
+
+  if (filters.categoryId) {
+    query += ` AND t.category_id = ?`;
+    params.push(filters.categoryId);
+  }
+
+  query += ` ORDER BY t.transaction_date DESC, t.id DESC`;
+
+  return db.getAllAsync<TransactionWithDetails>(query, ...params);
 }

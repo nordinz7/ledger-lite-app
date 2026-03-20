@@ -11,25 +11,12 @@ import {
   Account,
 } from '@/services/database';
 import { MaterialIcons } from '@expo/vector-icons';
-import { useFocusEffect, useRouter } from 'expo-router';
+import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useCallback, useState } from 'react';
-import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, startOfDay, endOfDay } from 'date-fns';
-import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-
-type Period = 'today' | 'week' | 'month';
-
-function getDateRange(period: Period): { from: string; to: string } {
-  const now = new Date();
-  switch (period) {
-    case 'today':
-      return { from: format(startOfDay(now), 'yyyy-MM-dd'), to: format(endOfDay(now), 'yyyy-MM-dd') };
-    case 'week':
-      return { from: format(startOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd'), to: format(endOfWeek(now, { weekStartsOn: 1 }), 'yyyy-MM-dd') };
-    case 'month':
-      return { from: format(startOfMonth(now), 'yyyy-MM-dd'), to: format(endOfMonth(now), 'yyyy-MM-dd') };
-  }
-}
+import React, { useCallback, useEffect, useState } from 'react';
+import { format, startOfDay, endOfDay } from 'date-fns';
+import { Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 
 function formatMoney(amount: number, symbol: string): string {
   const val = Math.abs(amount) / 100;
@@ -41,12 +28,7 @@ function makeStyles(c: AppColors) {
     container: { flex: 1, backgroundColor: c.background },
     header: { paddingHorizontal: Spacing.xl, paddingTop: Spacing.lg, paddingBottom: Spacing.sm },
     headerTitle: { fontSize: FontSizes.xxxl, fontWeight: '800', color: c.text },
-    filterRow: { flexDirection: 'row', paddingHorizontal: Spacing.xl, gap: Spacing.sm, marginBottom: Spacing.lg },
-    filterBtn: { paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm, borderRadius: Radius.md, backgroundColor: c.filterInactive },
-    filterBtnActive: { backgroundColor: c.primary },
-    filterText: { fontSize: FontSizes.sm, fontWeight: '600', color: c.textSecondary },
-    filterTextActive: { color: '#FFFFFF' },
-    summaryRow: { flexDirection: 'row', paddingHorizontal: Spacing.xl, gap: Spacing.md, marginBottom: Spacing.lg },
+    summaryRow: { flexDirection: 'row', paddingHorizontal: Spacing.xl, gap: Spacing.md, marginBottom: Spacing.lg, marginTop: Spacing.md },
     summaryCard: { flex: 1, backgroundColor: c.card, borderRadius: Radius.lg, padding: Spacing.lg, elevation: 1 },
     summaryLabel: { fontSize: FontSizes.xs, fontWeight: '600', color: c.textMuted, textTransform: 'uppercase', marginBottom: Spacing.xs },
     summaryIncome: { fontSize: FontSizes.xl, fontWeight: '800', color: c.success },
@@ -80,6 +62,28 @@ function makeStyles(c: AppColors) {
       backgroundColor: c.primary, alignItems: 'center', justifyContent: 'center',
       elevation: 4,
     },
+    filterRow: {
+      flexDirection: 'row',
+      flexWrap: 'wrap',
+      alignItems: 'center',
+      paddingHorizontal: Spacing.md,
+      paddingVertical: Spacing.sm,
+      gap: Spacing.sm,
+      backgroundColor: c.card,
+      borderBottomWidth: 1,
+      borderBottomColor: c.border,
+    },
+    filterChip: {
+      flexDirection: 'row', alignItems: 'center', gap: 4,
+      flexShrink: 0,
+      paddingHorizontal: Spacing.md, paddingVertical: 6,
+      borderRadius: 20,
+      backgroundColor: c.filterInactive,
+    },
+    filterChipActive: { backgroundColor: c.primary },
+    filterChipText: { fontSize: FontSizes.sm, fontWeight: '700', color: c.textSecondary },
+    filterChipTextActive: { color: '#FFFFFF' },
+    filterSpacer: { flex: 1 },
   });
 }
 
@@ -87,19 +91,38 @@ export default function DashboardScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
   const { colors, currencySymbol } = useSettings();
+  const params = useLocalSearchParams<{ filterDate?: string }>();
   const S = makeStyles(colors);
 
-  const [period, setPeriod] = useState<Period>('month');
   const [summary, setSummary] = useState<DashboardSummary>({ totalIncome: 0, totalExpense: 0, netBalance: 0 });
   const [catSummary, setCatSummary] = useState<CategorySummary[]>([]);
   const [recentTxns, setRecentTxns] = useState<TransactionWithDetails[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
+    const [selectedDate, setSelectedDate] = useState<Date | null>(() => {
+    if (params.filterDate) {
+      const d = new Date(params.filterDate);
+      if (!isNaN(d.getTime())) return d;
+    }
+    return new Date();
+  });
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const dateChipLabel = selectedDate ? format(selectedDate, 'dd MMM yyyy') : null;
+
+  // Update date when navigating with filterDate param
+  useEffect(() => {
+    if (params.filterDate) {
+      const d = new Date(params.filterDate);
+      if (!isNaN(d.getTime())) setSelectedDate(d);
+    }
+  }, [params.filterDate]);
 
   const loadData = useCallback(async () => {
-    const range = getDateRange(period);
+    const from = format(startOfDay(selectedDate), 'yyyy-MM-dd');
+    const to = format(endOfDay(selectedDate), 'yyyy-MM-dd');
+
     const [sum, cats, txns, accs] = await Promise.all([
-      getDashboardSummary(db, range.from, range.to),
-      getCategorySummary(db, range.from, range.to),
+      getDashboardSummary(db, from, to),
+      getCategorySummary(db, from, to),
       getRecentTransactions(db, 5),
       getAccounts(db),
     ]);
@@ -107,7 +130,12 @@ export default function DashboardScreen() {
     setCatSummary(cats);
     setRecentTxns(txns);
     setAccounts(accs);
-  }, [db, period]);
+  }, [db, selectedDate]);
+
+  const onDateChange = (_event: DateTimePickerEvent, date?: Date) => {
+    if (Platform.OS === 'android') setShowDatePicker(false);
+    if (date) setSelectedDate(date);
+  };
 
   useFocusEffect(useCallback(() => { loadData(); }, [loadData]));
 
@@ -118,20 +146,45 @@ export default function DashboardScreen() {
           <Text style={S.headerTitle}>Dashboard</Text>
         </View>
 
-        {/* Period filter */}
-        <View style={S.filterRow}>
-          {(['today', 'week', 'month'] as Period[]).map(p => (
-            <TouchableOpacity
-              key={p}
-              style={[S.filterBtn, period === p && S.filterBtnActive]}
-              onPress={() => setPeriod(p)}
-            >
-              <Text style={[S.filterText, period === p && S.filterTextActive]}>
-                {p === 'today' ? 'Today' : p === 'week' ? 'This Week' : 'This Month'}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+       {/* Filter row: date chip + customer chip */}
+      <View style={S.filterRow}>
+        {/* Date filter chip */}
+        <TouchableOpacity
+          style={[S.filterChip, selectedDate ? S.filterChipActive : undefined]}
+          onPress={() => {
+            if (selectedDate) {
+              setSelectedDate(null);
+            } else {
+              setShowDatePicker(true);
+            }
+          }}
+        >
+          <MaterialIcons
+            name={selectedDate ? 'close' : 'calendar-today'}
+            size={16}
+            color={selectedDate ? '#FFFFFF' : colors.textSecondary}
+          />
+          {dateChipLabel ? (
+            <Text style={[S.filterChipText, S.filterChipTextActive]} numberOfLines={1}>
+              {dateChipLabel}
+            </Text>
+          ) : (
+            <Text style={S.filterChipText}>Date</Text>
+          )}
+        </TouchableOpacity>
+
+        <View style={S.filterSpacer} />
+      </View>
+
+      {showDatePicker && (
+        <DateTimePicker
+          value={selectedDate ?? new Date()}
+          mode="date"
+          display={Platform.OS === 'ios' ? 'inline' : 'default'}
+          onChange={onDateChange}
+          themeVariant={colors.background === '#000000' || colors.background === '#121212' ? 'dark' : 'light'}
+        />
+      )}
 
         {/* Income / Expense cards */}
         <View style={S.summaryRow}>
