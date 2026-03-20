@@ -18,9 +18,10 @@ import { format, startOfDay, endOfDay } from 'date-fns';
 import { Platform, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 
+// Replace undefined with an explicit locale like 'en-US' or 'en-MY'
 function formatMoney(amount: number, symbol: string): string {
   const val = Math.abs(amount) / 100;
-  return `${symbol}${val.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  return `${symbol}${val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function makeStyles(c: AppColors) {

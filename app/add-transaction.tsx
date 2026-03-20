@@ -7,7 +7,8 @@ import { useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useState } from 'react';
 import { format } from 'date-fns';
-import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Keyboard, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, TouchableWithoutFeedback, View } from 'react-native';
+import * as Haptics from 'expo-haptics'; // Remember to install if not present
 
 type Tab = 'EXPENSE' | 'INCOME';
 
@@ -90,6 +91,9 @@ export default function AddTransactionScreen() {
   const filteredCats = categories.filter(c => c.type === tab);
 
   const handleSave = async () => {
+    // Haptic feedback on save attempt
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
     const cents = Math.round(parseFloat(amount) * 100);
     if (!amount || isNaN(cents) || cents <= 0) {
       Alert.alert('Invalid Amount', 'Please enter a valid amount.');
@@ -110,30 +114,40 @@ export default function AddTransactionScreen() {
 
   return (
     <KeyboardAvoidingView style={S.container} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-      <ScrollView contentContainerStyle={{ paddingBottom: 40 }}>
-        {/* Type toggle */}
-        <View style={S.tabRow}>
-          {(['EXPENSE', 'INCOME'] as Tab[]).map(t => (
-            <TouchableOpacity key={t} style={[S.tab, tab === t && S.tabActive]} onPress={() => { setTab(t); setSelectedCat(null); }}>
-              <Text style={[S.tabText, tab === t && S.tabTextActive]}>
-                {t === 'INCOME' ? 'Income' : 'Expense'}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
+      <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <ScrollView contentContainerStyle={{ paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
 
-        {/* Amount */}
-        <View style={S.section}>
-          <Text style={S.label}>Amount</Text>
-          <TextInput
-            style={S.amountInput}
-            value={amount}
-            onChangeText={setAmount}
-            placeholder="0.00"
-            placeholderTextColor={colors.textMuted}
-            keyboardType="decimal-pad"
-          />
-        </View>
+          {/* Add Haptics to Tabs */}
+          <View style={S.tabRow}>
+            {(['EXPENSE', 'INCOME'] as Tab[]).map(t => (
+              <TouchableOpacity
+                key={t}
+                style={[S.tab, tab === t && S.tabActive]}
+                onPress={() => {
+                  Haptics.selectionAsync();
+                  setTab(t);
+                  setSelectedCat(null);
+                }}>
+                <Text style={[S.tabText, tab === t && S.tabTextActive]}>
+                  {t === 'INCOME' ? 'Income' : 'Expense'}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Auto-focus the Amount Input */}
+          <View style={S.section}>
+            <Text style={S.label}>Amount</Text>
+            <TextInput
+              style={S.amountInput}
+              value={amount}
+              onChangeText={setAmount}
+              placeholder="0.00"
+              placeholderTextColor={colors.textMuted}
+              keyboardType="decimal-pad"
+              autoFocus={true} // Pops the keyboard immediately
+            />
+          </View>
 
         {/* Category */}
         <View style={S.section}>
@@ -202,6 +216,7 @@ export default function AddTransactionScreen() {
           <Text style={S.saveBtnText}>Save Transaction</Text>
         </TouchableOpacity>
       </ScrollView>
+    </TouchableWithoutFeedback>
     </KeyboardAvoidingView>
   );
 }
