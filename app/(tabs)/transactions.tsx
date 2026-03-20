@@ -202,6 +202,9 @@ export default function TransactionsScreen() {
         {/* Dynamic Secondary Filters */}
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={S.filterScroll}>
           {/* Type Filters */}
+          <TouchableOpacity style={[S.filterBtn, selectedType === null && S.filterBtnActive]} onPress={() => { setSelectedType(null); setSelectedCategoryId(null); }}>
+            <Text style={[S.filterText, selectedType === null && S.filterTextActive]}>All Types</Text>
+          </TouchableOpacity>
           <TouchableOpacity style={[S.filterBtn, selectedType === 'INCOME' && S.filterBtnActive]} onPress={() => { setSelectedType('INCOME'); setSelectedCategoryId(null); }}>
             <Text style={[S.filterText, selectedType === 'INCOME' && S.filterTextActive]}>Income</Text>
           </TouchableOpacity>
