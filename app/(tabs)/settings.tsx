@@ -106,11 +106,11 @@ export default function SettingsScreen() {
       </View>
 
       <View style={S.section}>
-        <Text style={S.sectionTitle}>Data</Text>
+        <Text style={S.sectionTitle}>Accounts</Text>
         <View style={S.card}>
           <TouchableOpacity style={[S.row, S.rowLast]} onPress={() => router.push({ pathname: '/accounts' })}>
             <MaterialIcons name="account-balance" size={24} color={colors.primary} style={S.rowIcon} />
-            <Text style={S.rowLabel}>Manage Accounts</Text>
+            <Text style={S.rowLabel}>Manage</Text>
             <MaterialIcons name="chevron-right" size={22} color={colors.textMuted} />
           </TouchableOpacity>
         </View>
@@ -122,7 +122,7 @@ export default function SettingsScreen() {
         <View style={S.card}>
           <View style={[S.row, S.rowLast]}>
             <MaterialIcons name="attach-money" size={24} color={colors.primary} style={S.rowIcon} />
-            <Text style={S.rowLabel}>Currency Symbol</Text>
+            <Text style={S.rowLabel}>Symbol</Text>
             <TextInput
               style={S.currencyInput}
               value={currencySymbol}
@@ -141,7 +141,7 @@ export default function SettingsScreen() {
         <View style={S.card}>
           <TouchableOpacity style={S.row} onPress={handleSaveBackup} disabled={backupLoading}>
             <MaterialIcons name="cloud-upload" size={24} color={colors.primary} style={S.rowIcon} />
-            <Text style={S.rowLabel}>Export Backup</Text>
+            <Text style={S.rowLabel}>Export</Text>
             {backupLoading
               ? <ActivityIndicator color={colors.primary} size="small" />
               : <MaterialIcons name="chevron-right" size={22} color={colors.textMuted} />
@@ -149,7 +149,7 @@ export default function SettingsScreen() {
           </TouchableOpacity>
           <TouchableOpacity style={[S.row, S.rowLast]} onPress={handleRestore} disabled={restoreLoading}>
             <MaterialIcons name="cloud-download" size={24} color={colors.primary} style={S.rowIcon} />
-            <Text style={S.rowLabel}>Restore Backup</Text>
+            <Text style={S.rowLabel}>Restore</Text>
             {restoreLoading
               ? <ActivityIndicator color={colors.primary} size="small" />
               : <MaterialIcons name="chevron-right" size={22} color={colors.textMuted} />
