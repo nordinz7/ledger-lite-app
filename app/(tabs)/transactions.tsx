@@ -5,6 +5,7 @@ import {
   getFilteredTransactions,
   getAccounts,
   getCategories,
+  deleteTransfer,
   Account,
   Category
 } from '@/services/database';
@@ -159,6 +160,20 @@ export default function TransactionsScreen() {
     if (date) setSelectedDate(date);
   };
 
+  const handleRowPress = (item: TransactionWithDetails) => {
+    if (item.kind === 'TRANSFER') {
+      Alert.alert('Transfer', `${item.account_name}\n${formatMoney(item.amount, currencySymbol)}`, [
+        { text: 'Close', style: 'cancel' },
+        {
+          text: 'Delete', style: 'destructive',
+          onPress: async () => { await deleteTransfer(db, item.id); loadData(); },
+        },
+      ]);
+      return;
+    }
+    router.push({ pathname: '/edit-transaction', params: { id: item.id } });
+  };
+
   // UI Label Helpers
   const activeAccount = accounts.find(a => a.id === selectedAccountId)?.name || 'All Accounts';
   const activeCategory = categories.find(c => c.id === selectedCategoryId)?.name || 'All Categories';
@@ -244,25 +259,28 @@ export default function TransactionsScreen() {
       <FlatList
         data={transactions}
         contentContainerStyle={S.listContent}
-        keyExtractor={i => String(i.id)}
+        keyExtractor={i => `${i.kind}-${i.id}`}
         ListEmptyComponent={<Text style={S.emptyText}>No transactions found</Text>}
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={S.txnCard}
-            onPress={() => router.push({ pathname: '/edit-transaction', params: { id: item.id } })}
-          >
-            <View style={[S.txnIcon, { backgroundColor: item.category_type === 'INCOME' ? colors.successLight : colors.dangerLight }]}>
-              <MaterialIcons name={item.category_icon as any} size={18} color={item.category_type === 'INCOME' ? colors.success : colors.danger} />
-            </View>
-            <View style={S.txnInfo}>
-              <Text style={S.txnCat}>{item.category_name}</Text>
-              <Text style={S.txnMeta}>{item.account_name} • {format(new Date(item.transaction_date), 'MMM d')}</Text>
-            </View>
-            <Text style={[S.txnAmount, { color: item.category_type === 'INCOME' ? colors.success : colors.danger }]}>
-              {item.category_type === 'INCOME' ? '+' : '-'}{formatMoney(item.amount, currencySymbol)}
-            </Text>
-          </TouchableOpacity>
-        )}
+        renderItem={({ item }) => {
+          const isTransfer = item.category_type === 'TRANSFER';
+          const isIncome = item.category_type === 'INCOME';
+          const iconBg = isTransfer ? colors.primaryLight : isIncome ? colors.successLight : colors.dangerLight;
+          const accent = isTransfer ? colors.primary : isIncome ? colors.success : colors.danger;
+          return (
+            <TouchableOpacity style={S.txnCard} onPress={() => handleRowPress(item)}>
+              <View style={[S.txnIcon, { backgroundColor: iconBg }]}>
+                <MaterialIcons name={item.category_icon as any} size={18} color={accent} />
+              </View>
+              <View style={S.txnInfo}>
+                <Text style={S.txnCat}>{item.category_name}</Text>
+                <Text style={S.txnMeta}>{item.account_name} • {format(new Date(item.transaction_date), 'MMM d')}</Text>
+              </View>
+              <Text style={[S.txnAmount, { color: accent }]}>
+                {isTransfer ? '' : isIncome ? '+' : '-'}{formatMoney(item.amount, currencySymbol)}
+              </Text>
+            </TouchableOpacity>
+          );
+        }}
       />
 
       <TouchableOpacity style={S.fab} onPress={() => router.push('/add-transaction')}>

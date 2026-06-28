@@ -289,20 +289,26 @@ export default function DashboardScreen() {
             <Text style={S.emptyText}>No transactions yet</Text>
           ) : (
             <View style={S.card}>
-              {recentTxns.map((txn, i) => (
-                <View key={txn.id} style={[S.txnRow, i === recentTxns.length - 1 && S.txnRowLast]}>
-                  <View style={[S.txnIcon, { backgroundColor: txn.category_type === 'INCOME' ? colors.successLight : colors.dangerLight }]}>
-                    <MaterialIcons name={txn.category_icon as any} size={18} color={txn.category_type === 'INCOME' ? colors.success : colors.danger} />
+              {recentTxns.map((txn, i) => {
+                const isTransfer = txn.category_type === 'TRANSFER';
+                const isIncome = txn.category_type === 'INCOME';
+                const iconBg = isTransfer ? colors.primaryLight : isIncome ? colors.successLight : colors.dangerLight;
+                const accent = isTransfer ? colors.primary : isIncome ? colors.success : colors.danger;
+                return (
+                  <View key={`${txn.kind}-${txn.id}`} style={[S.txnRow, i === recentTxns.length - 1 && S.txnRowLast]}>
+                    <View style={[S.txnIcon, { backgroundColor: iconBg }]}>
+                      <MaterialIcons name={txn.category_icon as any} size={18} color={accent} />
+                    </View>
+                    <View style={S.txnInfo}>
+                      <Text style={S.txnCat}>{txn.category_name}</Text>
+                      <Text style={S.txnNote}>{txn.note || txn.account_name} - {format(new Date(txn.transaction_date), 'MMM d')}</Text>
+                    </View>
+                    <Text style={[S.txnAmount, { color: accent }]}>
+                      {isTransfer ? '' : isIncome ? '+' : '-'}{formatMoney(txn.amount, currencySymbol)}
+                    </Text>
                   </View>
-                  <View style={S.txnInfo}>
-                    <Text style={S.txnCat}>{txn.category_name}</Text>
-                    <Text style={S.txnNote}>{txn.note || txn.account_name} - {format(new Date(txn.transaction_date), 'MMM d')}</Text>
-                  </View>
-                  <Text style={[S.txnAmount, { color: txn.category_type === 'INCOME' ? colors.success : colors.danger }]}>
-                    {txn.category_type === 'INCOME' ? '+' : '-'}{formatMoney(txn.amount, currencySymbol)}
-                  </Text>
-                </View>
-              ))}
+                );
+              })}
             </View>
           )}
         </View>

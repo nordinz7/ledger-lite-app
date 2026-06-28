@@ -28,11 +28,24 @@ export interface Transaction {
   note: string;
 }
 
+export interface Transfer {
+  id: number;
+  from_account_id: number;
+  to_account_id: number;
+  amount: number;
+  transaction_date: string;
+  note: string;
+}
+
+export type LedgerType = 'INCOME' | 'EXPENSE' | 'TRANSFER';
+
 export interface TransactionWithDetails extends Transaction {
   account_name: string;
   category_name: string;
-  category_type: 'INCOME' | 'EXPENSE';
+  category_type: LedgerType;
   category_icon: string;
+  // 'TXN' for real income/expense rows, 'TRANSFER' for synthetic transfer rows
+  kind: 'TXN' | 'TRANSFER';
 }
 
 // ─── DB Initialisation ───────────────────────────────────────────────────────
@@ -70,6 +83,19 @@ export async function initDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
       id               INTEGER PRIMARY KEY AUTOINCREMENT,
       account_id       INTEGER NOT NULL REFERENCES accounts(id),
       category_id      INTEGER NOT NULL REFERENCES categories(id),
+      amount           INTEGER NOT NULL,
+      transaction_date TEXT    NOT NULL,
+      note             TEXT    NOT NULL DEFAULT ''
+    );
+  `);
+
+  // Transfers move money between accounts. They are excluded from income/expense
+  // totals but still adjust each account's balance.
+  await db.execAsync(`
+    CREATE TABLE IF NOT EXISTS transfers (
+      id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      from_account_id  INTEGER NOT NULL REFERENCES accounts(id),
+      to_account_id    INTEGER NOT NULL REFERENCES accounts(id),
       amount           INTEGER NOT NULL,
       transaction_date TEXT    NOT NULL,
       note             TEXT    NOT NULL DEFAULT ''
@@ -148,8 +174,12 @@ function recalcAccountBalance(db: SQLite.SQLiteDatabase, accountId: number): Pro
       ), 0)
       FROM transactions t JOIN categories c ON c.id = t.category_id
       WHERE t.account_id = ?
+    ) + (
+      SELECT COALESCE(SUM(amount), 0) FROM transfers WHERE to_account_id = ?
+    ) - (
+      SELECT COALESCE(SUM(amount), 0) FROM transfers WHERE from_account_id = ?
     ) WHERE id = ?`,
-    accountId, accountId
+    accountId, accountId, accountId, accountId
   ).then(() => {});
 }
 
@@ -280,6 +310,66 @@ export async function deleteTransaction(db: SQLite.SQLiteDatabase, id: number): 
   if (old) await recalcAccountBalance(db, old.account_id);
 }
 
+// ─── Transfers ─────────────────────────────────────────────────────────────────
+
+interface TransferRow extends Transfer {
+  from_name: string;
+  to_name: string;
+}
+
+// Shape a transfer into a TransactionWithDetails so it can sit in the same ledger list.
+function toTransferLedgerRow(t: TransferRow): TransactionWithDetails {
+  return {
+    id: t.id,
+    account_id: t.from_account_id,
+    category_id: 0,
+    amount: t.amount,
+    transaction_date: t.transaction_date,
+    note: t.note,
+    account_name: `${t.from_name} → ${t.to_name}`,
+    category_name: 'Transfer',
+    category_type: 'TRANSFER',
+    category_icon: 'swap-horiz',
+    kind: 'TRANSFER',
+  };
+}
+
+// Most recent first; date strings are 'yyyy-MM-dd' so lexical compare is chronological.
+function byDateDesc(a: TransactionWithDetails, b: TransactionWithDetails): number {
+  if (a.transaction_date !== b.transaction_date) {
+    return a.transaction_date < b.transaction_date ? 1 : -1;
+  }
+  return b.id - a.id;
+}
+
+export async function addTransfer(
+  db: SQLite.SQLiteDatabase,
+  fromAccountId: number,
+  toAccountId: number,
+  amount: number,
+  transactionDate: string,
+  note: string,
+): Promise<number> {
+  const result = await db.runAsync(
+    'INSERT INTO transfers (from_account_id, to_account_id, amount, transaction_date, note) VALUES (?, ?, ?, ?, ?)',
+    fromAccountId, toAccountId, amount, transactionDate, note
+  );
+  await recalcAccountBalance(db, fromAccountId);
+  await recalcAccountBalance(db, toAccountId);
+  return result.lastInsertRowId;
+}
+
+export async function deleteTransfer(db: SQLite.SQLiteDatabase, id: number): Promise<void> {
+  const old = await db.getFirstAsync<{ from_account_id: number; to_account_id: number }>(
+    'SELECT from_account_id, to_account_id FROM transfers WHERE id = ?', id
+  );
+  await db.runAsync('DELETE FROM transfers WHERE id = ?', id);
+  if (old) {
+    await recalcAccountBalance(db, old.from_account_id);
+    await recalcAccountBalance(db, old.to_account_id);
+  }
+}
+
 // ─── Dashboard Queries ───────────────────────────────────────────────────────
 
 export interface DashboardSummary {
@@ -377,7 +467,7 @@ export async function getRecentTransactions(
   db: SQLite.SQLiteDatabase,
   limit: number = 5,
 ): Promise<TransactionWithDetails[]> {
-  return db.getAllAsync<TransactionWithDetails>(
+  const txns = await db.getAllAsync<TransactionWithDetails>(
     `SELECT t.*, a.name as account_name, c.name as category_name, c.type as category_type, c.icon_name as category_icon
      FROM transactions t
      JOIN accounts a ON a.id = t.account_id
@@ -386,17 +476,33 @@ export async function getRecentTransactions(
      LIMIT ?`,
     limit
   );
+  const transfers = await db.getAllAsync<TransferRow>(
+    `SELECT tr.*, af.name as from_name, at2.name as to_name
+     FROM transfers tr
+     JOIN accounts af ON af.id = tr.from_account_id
+     JOIN accounts at2 ON at2.id = tr.to_account_id
+     ORDER BY tr.transaction_date DESC, tr.id DESC
+     LIMIT ?`,
+    limit
+  );
+  const merged = [
+    ...txns.map(t => ({ ...t, kind: 'TXN' as const })),
+    ...transfers.map(toTransferLedgerRow),
+  ];
+  merged.sort(byDateDesc);
+  return merged.slice(0, limit);
 }
 
 // ─── Backup / Restore ─────────────────────────────────────────────────────────
 
 export async function getAllDataForBackup(db: SQLite.SQLiteDatabase) {
-  const [accounts, categories, transactions] = await Promise.all([
+  const [accounts, categories, transactions, transfers] = await Promise.all([
     db.getAllAsync('SELECT * FROM accounts'),
     db.getAllAsync('SELECT * FROM categories'),
     db.getAllAsync('SELECT * FROM transactions'),
+    db.getAllAsync('SELECT * FROM transfers'),
   ]);
-  return { accounts, categories, transactions };
+  return { accounts, categories, transactions, transfers };
 }
 
 export function isValidBackup(data: any): boolean {
@@ -406,14 +512,16 @@ export function isValidBackup(data: any): boolean {
     Array.isArray(data.accounts) &&
     Array.isArray(data.categories) &&
     Array.isArray(data.transactions)
+    // `transfers` is optional so backups from older versions still restore
   );
 }
 
 export async function restoreFromBackupData(
   db: SQLite.SQLiteDatabase,
   data: any,
-): Promise<{ accounts: number; categories: number; transactions: number }> {
+): Promise<{ accounts: number; categories: number; transactions: number; transfers: number }> {
   // Clear existing data
+  await db.execAsync('DELETE FROM transfers');
   await db.execAsync('DELETE FROM transactions');
   await db.execAsync('DELETE FROM categories');
   await db.execAsync('DELETE FROM accounts');
@@ -442,6 +550,15 @@ export async function restoreFromBackupData(
     );
   }
 
+  // Restore transfers (optional — older backups may not include them)
+  const transfers = Array.isArray(data.transfers) ? data.transfers : [];
+  for (const t of transfers) {
+    await db.runAsync(
+      'INSERT INTO transfers (id, from_account_id, to_account_id, amount, transaction_date, note) VALUES (?, ?, ?, ?, ?, ?)',
+      t.id, t.from_account_id, t.to_account_id, t.amount, t.transaction_date, t.note ?? ''
+    );
+  }
+
   // Recalc all account balances
   const accounts = await db.getAllAsync<{ id: number }>('SELECT id FROM accounts');
   for (const a of accounts) {
@@ -452,6 +569,7 @@ export async function restoreFromBackupData(
     accounts: data.accounts.length,
     categories: data.categories.length,
     transactions: data.transactions.length,
+    transfers: transfers.length,
   };
 }
 
@@ -509,5 +627,42 @@ export async function getFilteredTransactions(
 
   query += ` ORDER BY t.transaction_date DESC, t.id DESC`;
 
-  return db.getAllAsync<TransactionWithDetails>(query, ...params);
+  const txns = (await db.getAllAsync<TransactionWithDetails>(query, ...params))
+    .map(t => ({ ...t, kind: 'TXN' as const }));
+
+  // Transfers have no category or income/expense type, so they only belong in the
+  // list when those filters are not narrowing the view.
+  if (filters.type || filters.categoryId) {
+    return txns;
+  }
+
+  const trConditions: string[] = [];
+  const trParams: any[] = [];
+
+  if (filters.date) {
+    const dateStr = typeof filters.date === 'string' ? filters.date : format(filters.date, 'yyyy-MM-dd');
+    trConditions.push(`tr.transaction_date >= ? AND tr.transaction_date <= ?`);
+    trParams.push(startOfDay(new Date(dateStr)).toISOString(), endOfDay(new Date(dateStr)).toISOString());
+  }
+
+  if (filters.accountId) {
+    trConditions.push(`(tr.from_account_id = ? OR tr.to_account_id = ?)`);
+    trParams.push(filters.accountId, filters.accountId);
+  }
+
+  let trQuery = `
+    SELECT tr.*, af.name as from_name, at2.name as to_name
+    FROM transfers tr
+    JOIN accounts af ON af.id = tr.from_account_id
+    JOIN accounts at2 ON at2.id = tr.to_account_id
+  `;
+  if (trConditions.length > 0) {
+    trQuery += ` WHERE ` + trConditions.join(` AND `);
+  }
+
+  const transfers = (await db.getAllAsync<TransferRow>(trQuery, ...trParams)).map(toTransferLedgerRow);
+
+  const merged = [...txns, ...transfers];
+  merged.sort(byDateDesc);
+  return merged;
 }

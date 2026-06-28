@@ -133,7 +133,7 @@ export async function createAndShareBackup(db: SQLiteDatabase): Promise<void> {
 
 export async function pickAndRestoreBackup(
   db: SQLiteDatabase,
-): Promise<{ accounts: number; categories: number; transactions: number } | null> {
+): Promise<{ accounts: number; categories: number; transactions: number; transfers: number } | null> {
   const result = await DocumentPicker.getDocumentAsync({
     type: 'application/json',
     copyToCacheDirectory: true,
