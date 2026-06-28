@@ -1,6 +1,6 @@
 import { AppColors, FontSizes, Radius, Spacing } from '@/constants/theme';
 import { useSettings } from '@/contexts/SettingsContext';
-import { Account, Category, getAccounts, getCategories, updateTransaction, deleteTransaction } from '@/services/database';
+import { AccountWithGroups, Category, getAccountsWithGroups, getCategories, updateTransaction, deleteTransaction } from '@/services/database';
 import { MaterialIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -78,9 +78,10 @@ export default function EditTransactionScreen() {
   const [tab, setTab] = useState<Tab>('EXPENSE');
   const [amount, setAmount] = useState('');
   const [categories, setCategories] = useState<Category[]>([]);
-  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [accounts, setAccounts] = useState<AccountWithGroups[]>([]);
   const [selectedCat, setSelectedCat] = useState<number | null>(null);
   const [selectedAcc, setSelectedAcc] = useState<number | null>(null);
+  const [selectedGroup, setSelectedGroup] = useState<number | null>(null);
   const [date, setDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [note, setNote] = useState('');
@@ -88,20 +89,22 @@ export default function EditTransactionScreen() {
 
   useEffect(() => {
     (async () => {
-      const [cats, accs] = await Promise.all([getCategories(db), getAccounts(db)]);
+      const [cats, accs] = await Promise.all([getCategories(db), getAccountsWithGroups(db)]);
       setCategories(cats);
       setAccounts(accs);
 
       // Load existing transaction
       const txn = await db.getFirstAsync<{
         id: number; account_id: number; category_id: number; amount: number;
-        transaction_date: string; note: string;
+        transaction_date: string; note: string; group_id: number | null;
       }>('SELECT * FROM transactions WHERE id = ?', Number(id));
 
       if (txn) {
         setAmount((txn.amount / 100).toFixed(2));
         setSelectedCat(txn.category_id);
         setSelectedAcc(txn.account_id);
+        // Groups are mandatory now; older untagged transactions default to the account's group.
+        setSelectedGroup(txn.group_id ?? pickDefaultGroup(accs.find(a => a.id === txn.account_id)));
         setDate(new Date(txn.transaction_date));
         setNote(txn.note);
 
@@ -113,6 +116,17 @@ export default function EditTransactionScreen() {
   }, [db, id]);
 
   const filteredCats = categories.filter(c => c.type === tab);
+  const accountGroups = accounts.find(a => a.id === selectedAcc)?.groups ?? [];
+
+  const pickDefaultGroup = (acc?: AccountWithGroups): number | null => {
+    const grps = acc?.groups ?? [];
+    return grps.find(g => g.name.toLowerCase() === 'cash')?.id ?? grps[0]?.id ?? null;
+  };
+
+  const selectAccount = (accId: number) => {
+    setSelectedAcc(accId);
+    setSelectedGroup(pickDefaultGroup(accounts.find(a => a.id === accId))); // group choices are scoped to the account
+  };
 
   const handleSave = async () => {
     const cents = Math.round(parseFloat(amount) * 100);
@@ -124,8 +138,12 @@ export default function EditTransactionScreen() {
       Alert.alert('Missing Fields', 'Please select a category and account.');
       return;
     }
+    if (!selectedGroup) {
+      Alert.alert('Select Group', 'Please select a group for this transaction.');
+      return;
+    }
 
-    await updateTransaction(db, Number(id), selectedAcc, selectedCat, cents, format(date, 'yyyy-MM-dd'), note);
+    await updateTransaction(db, Number(id), selectedAcc, selectedCat, cents, format(date, 'yyyy-MM-dd'), note, selectedGroup);
     router.back();
   };
 
@@ -192,13 +210,30 @@ export default function EditTransactionScreen() {
               <TouchableOpacity
                 key={acc.id}
                 style={[S.accChip, selectedAcc === acc.id && S.accChipActive]}
-                onPress={() => setSelectedAcc(acc.id)}
+                onPress={() => selectAccount(acc.id)}
               >
                 <Text style={[S.accChipText, selectedAcc === acc.id && S.accChipTextActive]}>{acc.name}</Text>
               </TouchableOpacity>
             ))}
           </View>
         </View>
+
+        {accountGroups.length > 0 && (
+          <View style={S.section}>
+            <Text style={S.label}>Group</Text>
+            <View style={S.accGrid}>
+              {accountGroups.map(g => (
+                <TouchableOpacity
+                  key={g.id}
+                  style={[S.accChip, selectedGroup === g.id && S.accChipActive]}
+                  onPress={() => setSelectedGroup(g.id)}
+                >
+                  <Text style={[S.accChipText, selectedGroup === g.id && S.accChipTextActive]}>{g.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        )}
 
         <View style={S.section}>
           <Text style={S.label}>Details</Text>

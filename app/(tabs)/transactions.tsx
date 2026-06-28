@@ -5,8 +5,10 @@ import {
   getFilteredTransactions,
   getAccounts,
   getCategories,
+  getAccountGroups,
   deleteTransfer,
   Account,
+  AccountGroup,
   Category
 } from '@/services/database';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -90,33 +92,38 @@ export default function TransactionsScreen() {
   const [selectedType, setSelectedType] = useState<'INCOME' | 'EXPENSE' | null>(null);
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
+  const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
 
   const [transactions, setTransactions] = useState<TransactionWithDetails[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [groups, setGroups] = useState<AccountGroup[]>([]);
   const [totals, setTotals] = useState({ income: 0, expense: 0 });
 
   const loadData = useCallback(async () => {
-    const [txns, accs, cats] = await Promise.all([
+    const [txns, accs, cats, grps] = await Promise.all([
       getFilteredTransactions(db, {
         date: selectedDate,
         type: selectedType,
         accountId: selectedAccountId,
         categoryId: selectedCategoryId,
+        groupId: selectedGroupId,
       }),
       getAccounts(db),
-      getCategories(db)
+      getCategories(db),
+      getAccountGroups(db)
     ]);
     setTransactions(txns);
     setAccounts(accs);
     setCategories(cats);
+    setGroups(grps);
 
     const inc = txns.filter(t => t.category_type === 'INCOME').reduce((s, t) => s + t.amount, 0);
     const exp = txns.filter(t => t.category_type === 'EXPENSE').reduce((s, t) => s + t.amount, 0);
     setTotals({ income: inc, expense: exp });
-  }, [db, selectedDate, selectedType, selectedAccountId, selectedCategoryId]);
+  }, [db, selectedDate, selectedType, selectedAccountId, selectedCategoryId, selectedGroupId]);
 
   useFocusEffect(useCallback(() => { loadData(); }, [loadData]));
 
@@ -155,6 +162,18 @@ export default function TransactionsScreen() {
     ]);
   };
 
+  const showGroupPicker = () => {
+    const options = groups.map(g => ({
+      text: g.name,
+      onPress: () => setSelectedGroupId(g.id)
+    }));
+    Alert.alert('Select Group', '', [
+      { text: 'All Groups', onPress: () => setSelectedGroupId(null) },
+      ...options,
+      { text: 'Cancel', style: 'cancel' }
+    ]);
+  };
+
   const onDateChange = (_event: DateTimePickerEvent, date?: Date) => {
     if (Platform.OS === 'android') setShowDatePicker(false);
     if (date) setSelectedDate(date);
@@ -177,6 +196,7 @@ export default function TransactionsScreen() {
   // UI Label Helpers
   const activeAccount = accounts.find(a => a.id === selectedAccountId)?.name || 'All Accounts';
   const activeCategory = categories.find(c => c.id === selectedCategoryId)?.name || 'All Categories';
+  const activeGroup = groups.find(g => g.id === selectedGroupId)?.name || 'All Groups';
 
   return (
     <View style={S.container}>
@@ -229,6 +249,19 @@ export default function TransactionsScreen() {
           </Text>
           <MaterialIcons name="arrow-drop-down" size={14} color={selectedCategoryId !== null ? '#FFF' : colors.textSecondary} />
         </TouchableOpacity>
+
+        {/* Group Chip */}
+        {groups.length > 0 && (
+          <TouchableOpacity
+            style={[S.filterChip, selectedGroupId !== null && S.filterChipActive]}
+            onPress={showGroupPicker}
+          >
+            <Text style={[S.filterChipText, selectedGroupId !== null && S.filterChipTextActive]} numberOfLines={1}>
+              {activeGroup}
+            </Text>
+            <MaterialIcons name="arrow-drop-down" size={14} color={selectedGroupId !== null ? '#FFF' : colors.textSecondary} />
+          </TouchableOpacity>
+        )}
       </View>
 
       {showDatePicker && (

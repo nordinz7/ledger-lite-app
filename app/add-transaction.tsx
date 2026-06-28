@@ -1,6 +1,6 @@
 import { AppColors, FontSizes, Radius, Spacing } from '@/constants/theme';
 import { useSettings } from '@/contexts/SettingsContext';
-import { Account, Category, getAccounts, getCategories, addTransaction, addTransfer } from '@/services/database';
+import { AccountWithGroups, Category, getAccountsWithGroups, getCategories, addTransaction, addTransfer } from '@/services/database';
 import { MaterialIcons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { useRouter } from 'expo-router';
@@ -72,9 +72,10 @@ export default function AddTransactionScreen() {
   const [tab, setTab] = useState<Tab>('EXPENSE');
   const [amount, setAmount] = useState('');
   const [categories, setCategories] = useState<Category[]>([]);
-  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [accounts, setAccounts] = useState<AccountWithGroups[]>([]);
   const [selectedCat, setSelectedCat] = useState<number | null>(null);
   const [selectedAcc, setSelectedAcc] = useState<number | null>(null);
+  const [selectedGroup, setSelectedGroup] = useState<number | null>(null);
   const [selectedToAcc, setSelectedToAcc] = useState<number | null>(null);
   const [date, setDate] = useState(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
@@ -82,14 +83,29 @@ export default function AddTransactionScreen() {
 
   useEffect(() => {
     (async () => {
-      const [cats, accs] = await Promise.all([getCategories(db), getAccounts(db)]);
+      const [cats, accs] = await Promise.all([getCategories(db), getAccountsWithGroups(db)]);
       setCategories(cats);
       setAccounts(accs);
-      if (accs.length > 0) setSelectedAcc(accs[0].id);
+      if (accs.length > 0) {
+        setSelectedAcc(accs[0].id);
+        setSelectedGroup(pickDefaultGroup(accs[0]));
+      }
     })();
   }, [db]);
 
   const filteredCats = categories.filter(c => c.type === tab);
+  const accountGroups = accounts.find(a => a.id === selectedAcc)?.groups ?? [];
+
+  // Groups are mandatory; default to the account's Cash group (or its first group).
+  const pickDefaultGroup = (acc?: AccountWithGroups): number | null => {
+    const grps = acc?.groups ?? [];
+    return grps.find(g => g.name.toLowerCase() === 'cash')?.id ?? grps[0]?.id ?? null;
+  };
+
+  const selectAccount = (id: number) => {
+    setSelectedAcc(id);
+    setSelectedGroup(pickDefaultGroup(accounts.find(a => a.id === id))); // group choices are scoped to the account
+  };
 
   const handleSave = async () => {
     // Haptic feedback on save attempt
@@ -123,8 +139,12 @@ export default function AddTransactionScreen() {
       Alert.alert('Select Account', 'Please select an account.');
       return;
     }
+    if (!selectedGroup) {
+      Alert.alert('Select Group', 'Please select a group for this transaction.');
+      return;
+    }
 
-    await addTransaction(db, selectedAcc, selectedCat, cents, format(date, 'yyyy-MM-dd'), note);
+    await addTransaction(db, selectedAcc, selectedCat, cents, format(date, 'yyyy-MM-dd'), note, selectedGroup);
     router.back();
   };
 
@@ -192,13 +212,31 @@ export default function AddTransactionScreen() {
               <TouchableOpacity
                 key={acc.id}
                 style={[S.accChip, selectedAcc === acc.id && S.accChipActive]}
-                onPress={() => setSelectedAcc(acc.id)}
+                onPress={() => selectAccount(acc.id)}
               >
                 <Text style={[S.accChipText, selectedAcc === acc.id && S.accChipTextActive]}>{acc.name}</Text>
               </TouchableOpacity>
             ))}
           </View>
         </View>
+
+        {/* Group (income/expense only, when the account has groups) */}
+        {tab !== 'TRANSFER' && accountGroups.length > 0 && (
+          <View style={S.section}>
+            <Text style={S.label}>Group</Text>
+            <View style={S.accGrid}>
+              {accountGroups.map(g => (
+                <TouchableOpacity
+                  key={g.id}
+                  style={[S.accChip, selectedGroup === g.id && S.accChipActive]}
+                  onPress={() => setSelectedGroup(g.id)}
+                >
+                  <Text style={[S.accChipText, selectedGroup === g.id && S.accChipTextActive]}>{g.name}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        )}
 
         {/* To Account (transfer only) */}
         {tab === 'TRANSFER' && (
