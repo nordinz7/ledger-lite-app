@@ -22,6 +22,7 @@ function makeStyles(c: AppColors) {
       alignItems: 'center',
     },
     saveBtnText: { fontSize: FontSizes.lg, fontWeight: '700', color: '#FFFFFF' },
+    hint: { fontSize: FontSizes.sm, color: c.textMuted, marginTop: Spacing.sm },
   });
 }
 
@@ -32,13 +33,14 @@ export default function AddAccountScreen() {
   const S = makeStyles(colors);
 
   const [name, setName] = useState('');
+  const [group, setGroup] = useState('');
 
   const handleSave = async () => {
     if (!name.trim()) {
       Alert.alert('Missing Name', 'Please enter an account name.');
       return;
     }
-    await addAccount(db, name.trim());
+    await addAccount(db, name.trim(), group);
     router.back();
   };
 
@@ -50,10 +52,21 @@ export default function AddAccountScreen() {
           style={S.input}
           value={name}
           onChangeText={setName}
-          placeholder="e.g. Bank Account"
+          placeholder="e.g. Cash, Bank"
           placeholderTextColor={colors.textMuted}
           autoFocus
         />
+      </View>
+      <View style={S.section}>
+        <Text style={S.label}>Group (optional)</Text>
+        <TextInput
+          style={S.input}
+          value={group}
+          onChangeText={setGroup}
+          placeholder="e.g. Child, Mum"
+          placeholderTextColor={colors.textMuted}
+        />
+        <Text style={S.hint}>Accounts with the same group are totalled together, e.g. the child&apos;s Cash + Bank.</Text>
       </View>
       <TouchableOpacity style={S.saveBtn} onPress={handleSave}>
         <Text style={S.saveBtnText}>Add Account</Text>

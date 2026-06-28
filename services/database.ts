@@ -7,6 +7,7 @@ import { compact } from 'lodash';
 export interface Account {
   id: number;
   name: string;
+  group_name: string | null;
   balance: number;
   is_active: number;
 }
@@ -48,6 +49,12 @@ export async function initDatabase(db: SQLite.SQLiteDatabase): Promise<void> {
       is_active  INTEGER NOT NULL DEFAULT 1
     );
   `);
+
+  // Migration: add group_name to accounts (for grouping pockets by person, e.g. "Child", "Mum")
+  const accountCols = await db.getAllAsync<{ name: string }>('PRAGMA table_info(accounts)');
+  if (!accountCols.some(c => c.name === 'group_name')) {
+    await db.execAsync('ALTER TABLE accounts ADD COLUMN group_name TEXT');
+  }
 
   await db.execAsync(`
     CREATE TABLE IF NOT EXISTS categories (
@@ -114,13 +121,19 @@ export async function getAllAccounts(db: SQLite.SQLiteDatabase): Promise<Account
   return db.getAllAsync<Account>('SELECT * FROM accounts ORDER BY id');
 }
 
-export async function addAccount(db: SQLite.SQLiteDatabase, name: string): Promise<number> {
-  const result = await db.runAsync('INSERT INTO accounts (name) VALUES (?)', name);
+export async function addAccount(db: SQLite.SQLiteDatabase, name: string, groupName?: string | null): Promise<number> {
+  const result = await db.runAsync(
+    'INSERT INTO accounts (name, group_name) VALUES (?, ?)',
+    name, groupName?.trim() || null
+  );
   return result.lastInsertRowId;
 }
 
-export async function updateAccount(db: SQLite.SQLiteDatabase, id: number, name: string): Promise<void> {
-  await db.runAsync('UPDATE accounts SET name = ? WHERE id = ?', name, id);
+export async function updateAccount(db: SQLite.SQLiteDatabase, id: number, name: string, groupName?: string | null): Promise<void> {
+  await db.runAsync(
+    'UPDATE accounts SET name = ?, group_name = ? WHERE id = ?',
+    name, groupName?.trim() || null, id
+  );
 }
 
 export async function toggleAccountActive(db: SQLite.SQLiteDatabase, id: number, isActive: boolean): Promise<void> {
@@ -408,8 +421,8 @@ export async function restoreFromBackupData(
   // Restore accounts
   for (const a of data.accounts) {
     await db.runAsync(
-      'INSERT INTO accounts (id, name, balance, is_active) VALUES (?, ?, ?, ?)',
-      a.id, a.name, a.balance ?? 0, a.is_active ?? 1
+      'INSERT INTO accounts (id, name, group_name, balance, is_active) VALUES (?, ?, ?, ?, ?)',
+      a.id, a.name, a.group_name ?? null, a.balance ?? 0, a.is_active ?? 1
     );
   }
 

@@ -20,6 +20,7 @@ function makeStyles(c: AppColors) {
     inactiveCard: { opacity: 0.6 },
     info: { flex: 1 },
     name: { fontSize: FontSizes.lg, fontWeight: '600', color: c.text },
+    group: { fontSize: FontSizes.xs, fontWeight: '600', color: c.primary, marginTop: 2 },
     balance: { fontSize: FontSizes.md, color: c.textMuted, marginTop: 4 },
     badge: {
       fontSize: FontSizes.xs, fontWeight: '700', color: '#fff',
@@ -61,10 +62,11 @@ export default function AccountsScreen() {
         renderItem={({ item }) => (
           <TouchableOpacity
             style={[S.card, !item.is_active && S.inactiveCard]}
-            onPress={() => router.push({ pathname: '/edit-account', params: { id: item.id, name: item.name, isActive: item.is_active } })}
+            onPress={() => router.push({ pathname: '/edit-account', params: { id: item.id, name: item.name, group: item.group_name ?? '', isActive: item.is_active } })}
           >
             <View style={S.info}>
               <Text style={S.name}>{item.name}</Text>
+              {!!item.group_name && <Text style={S.group}>{item.group_name}</Text>}
               <Text style={S.balance}>Balance: {currencySymbol}{item.balance.toLocaleString()}</Text>
               {!item.is_active && <Text style={S.badge}>INACTIVE</Text>}
             </View>

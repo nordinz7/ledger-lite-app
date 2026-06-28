@@ -39,9 +39,10 @@ export default function EditAccountScreen() {
   const { colors } = useSettings();
   const S = makeStyles(colors);
 
-  const params = useLocalSearchParams<{ id: string, name: string, isActive: string }>();
+  const params = useLocalSearchParams<{ id: string, name: string, group: string, isActive: string }>();
 
   const [name, setName] = useState(params.name || '');
+  const [group, setGroup] = useState(params.group || '');
   const [isActive, setIsActive] = useState(params.isActive === '1');
 
   const handleSave = async () => {
@@ -51,7 +52,7 @@ export default function EditAccountScreen() {
     }
 
     const accountId = Number(params.id);
-    await updateAccount(db, accountId, name.trim());
+    await updateAccount(db, accountId, name.trim(), group);
     await toggleAccountActive(db, accountId, isActive);
 
     router.back();
@@ -65,7 +66,16 @@ export default function EditAccountScreen() {
           style={S.input}
           value={name}
           onChangeText={setName}
-          placeholder="e.g. Bank Account"
+          placeholder="e.g. Cash, Bank"
+          placeholderTextColor={colors.textMuted}
+        />
+
+        <Text style={S.label}>Group (optional)</Text>
+        <TextInput
+          style={S.input}
+          value={group}
+          onChangeText={setGroup}
+          placeholder="e.g. Child, Mum"
           placeholderTextColor={colors.textMuted}
         />
 
