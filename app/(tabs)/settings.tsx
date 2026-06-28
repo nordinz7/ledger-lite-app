@@ -73,7 +73,7 @@ export default function SettingsScreen() {
             try {
               const result = await pickAndRestoreBackup(db);
               if (result) {
-                Alert.alert('Restored', `Restored ${result.accounts} accounts, ${result.categories} categories, ${result.transactions} transactions.`);
+                Alert.alert('Restored', `Restored ${result.accounts} accounts, ${result.categories} categories, ${result.transactions} transactions, ${result.transfers} transfers.`);
               }
             } catch {
               Alert.alert('Restore Failed', 'An error occurred while restoring the backup.');

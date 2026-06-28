@@ -7,8 +7,10 @@ import {
   getDashboardSummary,
   getCategorySummary,
   getRecentTransactions,
-  getAccounts,
-  Account,
+  getAccountsWithGroups,
+  getAccountGroupBalances,
+  AccountGroupPortion,
+  AccountWithGroups,
 } from '@/services/database';
 import { MaterialIcons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
@@ -53,9 +55,15 @@ function makeStyles(c: AppColors) {
     txnNote: { fontSize: FontSizes.xs, color: c.textMuted, marginTop: 2 },
     txnAmount: { fontSize: FontSizes.md, fontWeight: '700' },
     accountsRow: { flexDirection: 'row', gap: Spacing.md, marginBottom: Spacing.lg, paddingHorizontal: Spacing.xl },
-    accountCard: { flex: 1, backgroundColor: c.card, borderRadius: Radius.lg, padding: Spacing.lg, elevation: 1 },
+    accountCard: { minWidth: 140, backgroundColor: c.card, borderRadius: Radius.lg, padding: Spacing.lg, elevation: 1 },
     accountName: { fontSize: FontSizes.sm, fontWeight: '600', color: c.textMuted, marginBottom: Spacing.xs },
     accountBalance: { fontSize: FontSizes.lg, fontWeight: '700', color: c.text },
+    accountGroupRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 4, marginTop: Spacing.sm },
+    accountGroupChip: {
+      fontSize: FontSizes.xs, fontWeight: '600', color: c.primary,
+      backgroundColor: c.filterInactive, paddingHorizontal: 6, paddingVertical: 2,
+      borderRadius: Radius.sm, overflow: 'hidden',
+    },
     emptyText: { fontSize: FontSizes.md, color: c.textMuted, textAlign: 'center', paddingVertical: Spacing.xxl },
     fab: {
       position: 'absolute', bottom: Spacing.xl, right: Spacing.xl,
@@ -98,7 +106,8 @@ export default function DashboardScreen() {
   const [summary, setSummary] = useState<DashboardSummary>({ totalIncome: 0, totalExpense: 0, netBalance: 0 });
   const [catSummary, setCatSummary] = useState<CategorySummary[]>([]);
   const [recentTxns, setRecentTxns] = useState<TransactionWithDetails[]>([]);
-  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [accounts, setAccounts] = useState<AccountWithGroups[]>([]);
+  const [groupPortions, setGroupPortions] = useState<AccountGroupPortion[]>([]);
     const [selectedDate, setSelectedDate] = useState<Date | null>(() => {
     if (params.filterDate) {
       const d = new Date(params.filterDate);
@@ -118,17 +127,27 @@ export default function DashboardScreen() {
   }, [params.filterDate]);
 
   const loadData = useCallback(async () => {
-    const [sum, cats, txns, accs] = await Promise.all([
+    const [sum, cats, txns, accs, portions] = await Promise.all([
       getDashboardSummary(db, selectedDate),
       getCategorySummary(db, selectedDate),
       getRecentTransactions(db, 5),
-      getAccounts(db),
+      getAccountsWithGroups(db),
+      getAccountGroupBalances(db),
     ]);
     setSummary(sum);
     setCatSummary(cats);
     setRecentTxns(txns);
     setAccounts(accs);
+    setGroupPortions(portions);
   }, [db, selectedDate]);
+
+  // Group each account's per-group portions for the breakdown chips on its card.
+  const portionsByAccount = new Map<number, AccountGroupPortion[]>();
+  for (const p of groupPortions) {
+    const arr = portionsByAccount.get(p.account_id) ?? [];
+    arr.push(p);
+    portionsByAccount.set(p.account_id, arr);
+  }
 
   const onDateChange = (_event: DateTimePickerEvent, date?: Date) => {
     if (Platform.OS === 'android') setShowDatePicker(false);
@@ -207,14 +226,26 @@ export default function DashboardScreen() {
         {/* Accounts */}
         {accounts.length > 0 && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={S.accountsRow}>
-            {accounts.map(acc => (
-              <View key={acc.id} style={S.accountCard}>
-                <Text style={S.accountName}>{acc.name}</Text>
-                <Text style={[S.accountBalance, { color: acc.balance >= 0 ? colors.success : colors.danger }]}>
-                  {formatMoney(acc.balance, currencySymbol)}
-                </Text>
-              </View>
-            ))}
+            {accounts.map(acc => {
+              const portions = portionsByAccount.get(acc.id) ?? [];
+              return (
+                <View key={acc.id} style={S.accountCard}>
+                  <Text style={S.accountName}>{acc.name}</Text>
+                  <Text style={[S.accountBalance, { color: acc.balance >= 0 ? colors.success : colors.danger }]}>
+                    {formatMoney(acc.balance, currencySymbol)}
+                  </Text>
+                  {portions.length > 0 && (
+                    <View style={S.accountGroupRow}>
+                      {portions.map(p => (
+                        <Text key={p.group_id} style={S.accountGroupChip}>
+                          {p.group_name} {p.total < 0 ? '-' : ''}{formatMoney(p.total, currencySymbol)}
+                        </Text>
+                      ))}
+                    </View>
+                  )}
+                </View>
+              );
+            })}
           </ScrollView>
         )}
 
@@ -245,20 +276,26 @@ export default function DashboardScreen() {
             <Text style={S.emptyText}>No transactions yet</Text>
           ) : (
             <View style={S.card}>
-              {recentTxns.map((txn, i) => (
-                <View key={txn.id} style={[S.txnRow, i === recentTxns.length - 1 && S.txnRowLast]}>
-                  <View style={[S.txnIcon, { backgroundColor: txn.category_type === 'INCOME' ? colors.successLight : colors.dangerLight }]}>
-                    <MaterialIcons name={txn.category_icon as any} size={18} color={txn.category_type === 'INCOME' ? colors.success : colors.danger} />
+              {recentTxns.map((txn, i) => {
+                const isTransfer = txn.category_type === 'TRANSFER';
+                const isIncome = txn.category_type === 'INCOME';
+                const iconBg = isTransfer ? colors.primaryLight : isIncome ? colors.successLight : colors.dangerLight;
+                const accent = isTransfer ? colors.primary : isIncome ? colors.success : colors.danger;
+                return (
+                  <View key={`${txn.kind}-${txn.id}`} style={[S.txnRow, i === recentTxns.length - 1 && S.txnRowLast]}>
+                    <View style={[S.txnIcon, { backgroundColor: iconBg }]}>
+                      <MaterialIcons name={txn.category_icon as any} size={18} color={accent} />
+                    </View>
+                    <View style={S.txnInfo}>
+                      <Text style={S.txnCat}>{txn.category_name}</Text>
+                      <Text style={S.txnNote}>{txn.note || txn.account_name} - {format(new Date(txn.transaction_date), 'MMM d')}</Text>
+                    </View>
+                    <Text style={[S.txnAmount, { color: accent }]}>
+                      {isTransfer ? '' : isIncome ? '+' : '-'}{formatMoney(txn.amount, currencySymbol)}
+                    </Text>
                   </View>
-                  <View style={S.txnInfo}>
-                    <Text style={S.txnCat}>{txn.category_name}</Text>
-                    <Text style={S.txnNote}>{txn.note || txn.account_name} - {format(new Date(txn.transaction_date), 'MMM d')}</Text>
-                  </View>
-                  <Text style={[S.txnAmount, { color: txn.category_type === 'INCOME' ? colors.success : colors.danger }]}>
-                    {txn.category_type === 'INCOME' ? '+' : '-'}{formatMoney(txn.amount, currencySymbol)}
-                  </Text>
-                </View>
-              ))}
+                );
+              })}
             </View>
           )}
         </View>

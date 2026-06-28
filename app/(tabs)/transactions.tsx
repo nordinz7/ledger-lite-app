@@ -5,7 +5,10 @@ import {
   getFilteredTransactions,
   getAccounts,
   getCategories,
+  getAccountGroups,
+  deleteTransfer,
   Account,
+  AccountGroup,
   Category
 } from '@/services/database';
 import { MaterialIcons } from '@expo/vector-icons';
@@ -89,33 +92,38 @@ export default function TransactionsScreen() {
   const [selectedType, setSelectedType] = useState<'INCOME' | 'EXPENSE' | null>(null);
   const [selectedAccountId, setSelectedAccountId] = useState<number | null>(null);
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
+  const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null);
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
   const [showDatePicker, setShowDatePicker] = useState(false);
 
   const [transactions, setTransactions] = useState<TransactionWithDetails[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  const [groups, setGroups] = useState<AccountGroup[]>([]);
   const [totals, setTotals] = useState({ income: 0, expense: 0 });
 
   const loadData = useCallback(async () => {
-    const [txns, accs, cats] = await Promise.all([
+    const [txns, accs, cats, grps] = await Promise.all([
       getFilteredTransactions(db, {
         date: selectedDate,
         type: selectedType,
         accountId: selectedAccountId,
         categoryId: selectedCategoryId,
+        groupId: selectedGroupId,
       }),
       getAccounts(db),
-      getCategories(db)
+      getCategories(db),
+      getAccountGroups(db)
     ]);
     setTransactions(txns);
     setAccounts(accs);
     setCategories(cats);
+    setGroups(grps);
 
     const inc = txns.filter(t => t.category_type === 'INCOME').reduce((s, t) => s + t.amount, 0);
     const exp = txns.filter(t => t.category_type === 'EXPENSE').reduce((s, t) => s + t.amount, 0);
     setTotals({ income: inc, expense: exp });
-  }, [db, selectedDate, selectedType, selectedAccountId, selectedCategoryId]);
+  }, [db, selectedDate, selectedType, selectedAccountId, selectedCategoryId, selectedGroupId]);
 
   useFocusEffect(useCallback(() => { loadData(); }, [loadData]));
 
@@ -154,14 +162,41 @@ export default function TransactionsScreen() {
     ]);
   };
 
+  const showGroupPicker = () => {
+    const options = groups.map(g => ({
+      text: g.name,
+      onPress: () => setSelectedGroupId(g.id)
+    }));
+    Alert.alert('Select Group', '', [
+      { text: 'All Groups', onPress: () => setSelectedGroupId(null) },
+      ...options,
+      { text: 'Cancel', style: 'cancel' }
+    ]);
+  };
+
   const onDateChange = (_event: DateTimePickerEvent, date?: Date) => {
     if (Platform.OS === 'android') setShowDatePicker(false);
     if (date) setSelectedDate(date);
   };
 
+  const handleRowPress = (item: TransactionWithDetails) => {
+    if (item.kind === 'TRANSFER') {
+      Alert.alert('Transfer', `${item.account_name}\n${formatMoney(item.amount, currencySymbol)}`, [
+        { text: 'Close', style: 'cancel' },
+        {
+          text: 'Delete', style: 'destructive',
+          onPress: async () => { await deleteTransfer(db, item.id); loadData(); },
+        },
+      ]);
+      return;
+    }
+    router.push({ pathname: '/edit-transaction', params: { id: item.id } });
+  };
+
   // UI Label Helpers
   const activeAccount = accounts.find(a => a.id === selectedAccountId)?.name || 'All Accounts';
   const activeCategory = categories.find(c => c.id === selectedCategoryId)?.name || 'All Categories';
+  const activeGroup = groups.find(g => g.id === selectedGroupId)?.name || 'All Groups';
 
   return (
     <View style={S.container}>
@@ -214,6 +249,19 @@ export default function TransactionsScreen() {
           </Text>
           <MaterialIcons name="arrow-drop-down" size={14} color={selectedCategoryId !== null ? '#FFF' : colors.textSecondary} />
         </TouchableOpacity>
+
+        {/* Group Chip */}
+        {groups.length > 0 && (
+          <TouchableOpacity
+            style={[S.filterChip, selectedGroupId !== null && S.filterChipActive]}
+            onPress={showGroupPicker}
+          >
+            <Text style={[S.filterChipText, selectedGroupId !== null && S.filterChipTextActive]} numberOfLines={1}>
+              {activeGroup}
+            </Text>
+            <MaterialIcons name="arrow-drop-down" size={14} color={selectedGroupId !== null ? '#FFF' : colors.textSecondary} />
+          </TouchableOpacity>
+        )}
       </View>
 
       {showDatePicker && (
@@ -244,25 +292,28 @@ export default function TransactionsScreen() {
       <FlatList
         data={transactions}
         contentContainerStyle={S.listContent}
-        keyExtractor={i => String(i.id)}
+        keyExtractor={i => `${i.kind}-${i.id}`}
         ListEmptyComponent={<Text style={S.emptyText}>No transactions found</Text>}
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={S.txnCard}
-            onPress={() => router.push({ pathname: '/edit-transaction', params: { id: item.id } })}
-          >
-            <View style={[S.txnIcon, { backgroundColor: item.category_type === 'INCOME' ? colors.successLight : colors.dangerLight }]}>
-              <MaterialIcons name={item.category_icon as any} size={18} color={item.category_type === 'INCOME' ? colors.success : colors.danger} />
-            </View>
-            <View style={S.txnInfo}>
-              <Text style={S.txnCat}>{item.category_name}</Text>
-              <Text style={S.txnMeta}>{item.account_name} • {format(new Date(item.transaction_date), 'MMM d')}</Text>
-            </View>
-            <Text style={[S.txnAmount, { color: item.category_type === 'INCOME' ? colors.success : colors.danger }]}>
-              {item.category_type === 'INCOME' ? '+' : '-'}{formatMoney(item.amount, currencySymbol)}
-            </Text>
-          </TouchableOpacity>
-        )}
+        renderItem={({ item }) => {
+          const isTransfer = item.category_type === 'TRANSFER';
+          const isIncome = item.category_type === 'INCOME';
+          const iconBg = isTransfer ? colors.primaryLight : isIncome ? colors.successLight : colors.dangerLight;
+          const accent = isTransfer ? colors.primary : isIncome ? colors.success : colors.danger;
+          return (
+            <TouchableOpacity style={S.txnCard} onPress={() => handleRowPress(item)}>
+              <View style={[S.txnIcon, { backgroundColor: iconBg }]}>
+                <MaterialIcons name={item.category_icon as any} size={18} color={accent} />
+              </View>
+              <View style={S.txnInfo}>
+                <Text style={S.txnCat}>{item.category_name}</Text>
+                <Text style={S.txnMeta}>{item.account_name} • {format(new Date(item.transaction_date), 'MMM d')}</Text>
+              </View>
+              <Text style={[S.txnAmount, { color: accent }]}>
+                {isTransfer ? '' : isIncome ? '+' : '-'}{formatMoney(item.amount, currencySymbol)}
+              </Text>
+            </TouchableOpacity>
+          );
+        }}
       />
 
       <TouchableOpacity style={S.fab} onPress={() => router.push('/add-transaction')}>
