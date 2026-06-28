@@ -53,7 +53,12 @@ function makeStyles(c: AppColors) {
     txnNote: { fontSize: FontSizes.xs, color: c.textMuted, marginTop: 2 },
     txnAmount: { fontSize: FontSizes.md, fontWeight: '700' },
     accountsRow: { flexDirection: 'row', gap: Spacing.md, marginBottom: Spacing.lg, paddingHorizontal: Spacing.xl },
-    accountCard: { flex: 1, backgroundColor: c.card, borderRadius: Radius.lg, padding: Spacing.lg, elevation: 1 },
+    accountCard: { minWidth: 140, backgroundColor: c.card, borderRadius: Radius.lg, padding: Spacing.lg, elevation: 1 },
+    groupBlock: { marginBottom: Spacing.lg },
+    groupHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: Spacing.xl, marginBottom: Spacing.sm },
+    groupName: { fontSize: FontSizes.sm, fontWeight: '700', color: c.textMuted, textTransform: 'uppercase', letterSpacing: 1 },
+    groupTotal: { fontSize: FontSizes.md, fontWeight: '800' },
+    groupCardsRow: { flexDirection: 'row', gap: Spacing.md, paddingHorizontal: Spacing.xl },
     accountName: { fontSize: FontSizes.sm, fontWeight: '600', color: c.textMuted, marginBottom: Spacing.xs },
     accountBalance: { fontSize: FontSizes.lg, fontWeight: '700', color: c.text },
     emptyText: { fontSize: FontSizes.md, color: c.textMuted, textAlign: 'center', paddingVertical: Spacing.xxl },
@@ -137,6 +142,23 @@ export default function DashboardScreen() {
 
   useFocusEffect(useCallback(() => { loadData(); }, [loadData]));
 
+  // Split accounts into ungrouped (standalone cards) and named groups (with subtotals)
+  const ungroupedAccounts = accounts.filter(a => !a.group_name?.trim());
+  const accountGroups: { name: string; total: number; accounts: Account[] }[] = [];
+  const groupIndex = new Map<string, number>();
+  for (const acc of accounts) {
+    const key = acc.group_name?.trim();
+    if (!key) continue;
+    if (groupIndex.has(key)) {
+      const g = accountGroups[groupIndex.get(key)!];
+      g.accounts.push(acc);
+      g.total += acc.balance;
+    } else {
+      groupIndex.set(key, accountGroups.length);
+      accountGroups.push({ name: key, total: acc.balance, accounts: [acc] });
+    }
+  }
+
   return (
     <View style={S.container}>
       <ScrollView contentContainerStyle={{ paddingBottom: 80 }}>
@@ -205,9 +227,9 @@ export default function DashboardScreen() {
         </View>
 
         {/* Accounts */}
-        {accounts.length > 0 && (
+        {ungroupedAccounts.length > 0 && (
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={S.accountsRow}>
-            {accounts.map(acc => (
+            {ungroupedAccounts.map(acc => (
               <View key={acc.id} style={S.accountCard}>
                 <Text style={S.accountName}>{acc.name}</Text>
                 <Text style={[S.accountBalance, { color: acc.balance >= 0 ? colors.success : colors.danger }]}>
@@ -217,6 +239,28 @@ export default function DashboardScreen() {
             ))}
           </ScrollView>
         )}
+
+        {/* Grouped accounts (e.g. Child, Mum) with subtotals */}
+        {accountGroups.map(group => (
+          <View key={group.name} style={S.groupBlock}>
+            <View style={S.groupHeader}>
+              <Text style={S.groupName}>{group.name}</Text>
+              <Text style={[S.groupTotal, { color: group.total >= 0 ? colors.success : colors.danger }]}>
+                {group.total < 0 ? '-' : ''}{formatMoney(group.total, currencySymbol)}
+              </Text>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={S.groupCardsRow}>
+              {group.accounts.map(acc => (
+                <View key={acc.id} style={S.accountCard}>
+                  <Text style={S.accountName}>{acc.name}</Text>
+                  <Text style={[S.accountBalance, { color: acc.balance >= 0 ? colors.success : colors.danger }]}>
+                    {formatMoney(acc.balance, currencySymbol)}
+                  </Text>
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        ))}
 
         {/* Category breakdown */}
         {catSummary.length > 0 && (

@@ -290,7 +290,7 @@ export interface DashboardSummary {
 
 export async function getDashboardSummary(
   db: SQLite.SQLiteDatabase,
-  date?: string,
+  date?: string | Date | null,
 ): Promise<DashboardSummary> {
   let query = `
     SELECT
@@ -332,7 +332,7 @@ export interface CategorySummary {
 
 export async function getCategorySummary(
   db: SQLite.SQLiteDatabase,
-  date?: string,
+  date?: string | Date | null,
   type?: 'INCOME' | 'EXPENSE',
 ): Promise<CategorySummary[]> {
   let query = `
